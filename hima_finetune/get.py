@@ -31,11 +31,16 @@ AUDIO_EXT = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".aac", ".wma", "
 def fetch(src, cache):
     """A source string -> a local folder."""
     if src.startswith("hf:"):
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import HfApi, hf_hub_download, snapshot_download
         parts = src[3:].strip("/").split("/")
         repo, sub = "/".join(parts[:2]), "/".join(parts[2:])
-        root = snapshot_download(repo, repo_type="dataset", allow_patterns=[f"{sub}/**"] if sub else None)
-        return os.path.join(root, sub) if sub else root
+        files = set(HfApi().list_repo_files(repo, repo_type="dataset"))
+        packed = next((f"{sub}{ext}" for ext in (".tar", ".tar.gz", ".zip") if sub and f"{sub}{ext}" in files), None)
+        if packed:                                     # one file per folder: one download instead of hundreds of requests
+            src = hf_hub_download(repo, packed, repo_type="dataset")
+        else:
+            root = snapshot_download(repo, repo_type="dataset", allow_patterns=[f"{sub}/**"] if sub else None)
+            return os.path.join(root, sub) if sub else root
     if src.startswith(("http://", "https://")):
         name = os.path.basename(src.split("?")[0]) or "download"
         dst = os.path.join(cache, name)
@@ -44,7 +49,7 @@ def fetch(src, cache):
             urllib.request.urlretrieve(src, dst)
         src = dst
     if os.path.isfile(src) and (src.endswith(".zip") or ".tar" in src or src.endswith(".tgz")):
-        out = os.path.join(cache, os.path.basename(src).split(".")[0])
+        out = os.path.join(cache, os.path.basename(os.path.realpath(src)).split(".")[0] + "_" + os.path.basename(src).split(".")[0])
         if not os.path.isdir(out):
             (zipfile.ZipFile(src).extractall if src.endswith(".zip") else tarfile.open(src).extractall)(out)
         src = out
