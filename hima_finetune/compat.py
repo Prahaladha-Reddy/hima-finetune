@@ -16,4 +16,4 @@ def patch_torchaudio():
 def voice_print_model(savedir, device):
     patch_torchaudio()
     from speechbrain.inference.speaker import EncoderClassifier
-    return EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir=savedir, run_opts={"device": str(device)})
+    return EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir=savedir, run_opts={"device": "cuda:0" if str(device) == "cuda" else str(device)})

@@ -29,13 +29,20 @@ voices were made. Everything runs on **one free T4** (Kaggle or Colab).
 | Train | 4.4 min |
 | Package | 0.2 min |
 
-Run it as it is to train two ready-made expressive demo voices, or change the first cell to train your own.
+Run it as it is to train one ready-made expressive Telugu voice (male), or pick Hindi, the female voice or both in the first cell, or train your own.
 """),
 md("""
 ## 1. Choose your voices
-The only cell you need to edit.
+The only cell you need to edit. Pick from the two menus to train the ready-made demo voices:
 
-**`SOURCES`**: where the voices come from. Any mix of:
+| Language | Male | Female |
+|---|---|---|
+| Telugu | Kiran | Anjali |
+| Hindi | Arjun | Priya |
+
+**Male** is the default (one voice, about 5 minutes on a T4). **Male + Female** trains both, about twice as long.
+
+**Your own voices:** list them in `MY_SOURCES` (then the menus are ignored, except the language). Any mix of:
 
 | Source | Example |
 |---|---|
@@ -44,23 +51,25 @@ The only cell you need to edit.
 | A folder (Kaggle input, Drive, upload) | `"/kaggle/input/my-voices"` · `"/content/drive/MyDrive/my-voices"` |
 | A zip on the web | `"https://example.com/my-voices.zip"` |
 
-Each source is **clips + text**: a `metadata.csv` (`path|text|voice`, one line per clip) next to the clips. The demo voices come
+Each of your sources is **clips + text**: a `metadata.csv` (`path|text|voice`, one line per clip) next to the clips. The demo voices come
 with their text, so nothing extra runs.
 
-- **Recordings but no text?** Put them in one folder per voice (any length, any format) and add that folder to `SOURCES`: they are
+- **Recordings but no text?** Put them in one folder per voice (any length, any format) and add that folder to `MY_SOURCES`: they are
   cut at the pauses and written down by [Hima-ASR](https://huggingface.co/Prahaladha/hima-asr). Install with
   `hima-finetune[transcribe]` in step 2 for this.
 - **No recordings at all?** Generate a synthetic voice with [Maya 2 Native](https://huggingface.co/maya-research/maya2-native)
-  (see the last section) and add the result to `SOURCES`.
+  (see the last section) and add the result to `MY_SOURCES`.
 
 **Good voices:** 30-45 minutes each, one speaker, clean audio (no music, no other voices), delivered the way you want it to sound:
 the model copies the style of its data, so lively recordings give a lively voice. Only use voices you have the right to use.
 """),
 code("""
-LANG    = "te"                                          # "te" Telugu or "hi" Hindi
-SOURCES = ["hf:Prahaladha/hima-finetune-demo-voices/te"]       # one or more sources (see the table above)
-VOICES  = []                                            # [] = every voice found, or e.g. ["Anjali"]
-RENAME  = {}                                            # optional new names, e.g. {"Anjali": "Meera"}
+LANGUAGE = "Telugu"   #@param ["Telugu", "Hindi"]
+VOICES   = "Male"     #@param ["Male", "Female", "Male + Female"]
+
+MY_SOURCES = []       # your own voices instead of the demo ones (see the table above); [] = use the demo voices
+MY_VOICES  = []       # with MY_SOURCES: [] = every voice found, or e.g. ["Meera", "Ravi"] (also the listening order)
+RENAME     = {}       # optional new names, e.g. {"Kiran": "Ravi"}
 
 WORK, OUT = "work", "my-model"                          # Colab: put WORK on Google Drive to survive a disconnect
 """),
@@ -70,6 +79,18 @@ md("""
 """),
 code(f"""
 import os, sys, json, subprocess
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"      # every download here is public: never ask for your Hugging Face token
+
+DEMO = {{"Telugu": ("te", {{"Male": ["Kiran"], "Female": ["Anjali"], "Male + Female": ["Kiran", "Anjali"]}}),
+        "Hindi":  ("hi", {{"Male": ["Arjun"], "Female": ["Priya"], "Male + Female": ["Arjun", "Priya"]}})}}
+LANG, menu = DEMO[LANGUAGE]
+demo_pick = menu[VOICES]
+if MY_SOURCES:
+    SOURCES, PICK = MY_SOURCES, MY_VOICES
+else:
+    SOURCES, PICK = [f"hf:Prahaladha/hima-finetune-demo-voices/{{LANG}}"], demo_pick
+print(f"{{LANGUAGE}}: training", ", ".join(PICK) if PICK else "every voice in your sources")
+
 !pip install -q "hima-finetune @ git+{REPO}"          # recordings without text? use "hima-finetune[transcribe] @ git+..." instead
 from huggingface_hub import snapshot_download
 BASE = os.path.abspath(snapshot_download(f"Prahaladha/hima-tts-nano-{{LANG}}", local_dir=f"hima-tts-nano-{{LANG}}"))
@@ -92,7 +113,7 @@ Downloads every source, transcribes any recordings that have no text, keeps the 
 code("""
 DATA = f"{WORK}/data"
 args = " ".join(f"--source '{s}'" for s in SOURCES)
-args += f" --voices {','.join(VOICES)}" if VOICES else ""
+args += f" --voices {','.join(PICK)}" if PICK else ""
 args += f" --rename {','.join(f'{k}={v}' for k, v in RENAME.items())}" if RENAME else ""
 run(f"hima-finetune get {args} --lang {LANG} --out {DATA}")
 """),
@@ -132,7 +153,8 @@ LINES = {"te": ["ఈ రోజు సాయంత్రం మనం కలి�
          "hi": ["आज शाम हम साथ में फ़िल्म देखने चलें?", "अरे वाह! तुमने सच में कर दिखाया!",
                 "कितनी बार कहूँ तुमसे? ये आख़िरी बार है!", "मुझे यकीन नहीं हो रहा कि वो अब कभी नहीं आएगा।"]}[LANG]
 held = [json.loads(l) for l in open(f"{WORK}/enc/index.jsonl", encoding="utf-8")]
-for name in tts.voices:
+order = [RENAME.get(v, v) for v in PICK if RENAME.get(v, v) in tts.voices] or list(tts.voices)   # male first, then female
+for name in order:
     display(Markdown(f"### {name}"))
     real = next((r for r in held if r["voice"] == name and r["split"] == "holdout"), None)
     if real:
@@ -147,7 +169,7 @@ md("""
 ```python
 from hima_tts import TTS
 tts = TTS("my-model")
-tts.save(tts.say("మీ వాక్యం ఇక్కడ", voice="Anjali"), "out.wav")
+tts.save(tts.say("మీ వాక్యం ఇక్కడ", voice="Kiran"), "out.wav")
 ```
 Your voices are two small files, `my-model/voices/adapter.safetensors` and `voices.safetensors`. Download them, or push the folder
 to the Hugging Face Hub:
@@ -170,7 +192,7 @@ pip install "maya3 @ git+https://github.com/MayaResearch/maya2-native" --extra-i
 pip install --no-deps "hima-finetune @ git+https://github.com/Prahaladha-Reddy/hima-finetune" pyarrow
 hima-finetune distill --voices Vaidehi,Sreekar --lang te --minutes 45 --out distilled
 ```
-Then add the `distilled` folder to `SOURCES` above. Licences: the teacher's weights are Apache-2.0, its codec (Kyutai Mimi) is
+Then add the `distilled` folder to `MY_SOURCES` above. Licences: the teacher's weights are Apache-2.0, its codec (Kyutai Mimi) is
 CC-BY-4.0, and the default sentences come from Wikipedia (CC BY-SA 4.0).
 
 **Demo voices:** a subset of [Rasa](https://huggingface.co/datasets/ai4bharat/Rasa) by AI4Bharat (CC-BY-4.0), conversational and
