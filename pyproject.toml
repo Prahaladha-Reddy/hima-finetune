@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hima-finetune"
+version = "0.1.0"
+description = "Train your own built-in voices for Hima TTS nano on one free T4: from raw recordings to a ready model folder."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.1", "numpy", "scipy", "soundfile", "librosa", "sentencepiece", "safetensors", "pyyaml",
+  "huggingface_hub", "speechbrain>=1.0",
+]
+
+[project.optional-dependencies]
+transcribe = ["transformers>=5.13", "torchaudio"]
+
+[project.scripts]
+hima-finetune = "hima_finetune.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Prahaladha-Reddy/hima-finetune"
+"Hima TTS (Telugu)" = "https://huggingface.co/Prahaladha/hima-tts-nano-te"
+"Hima TTS (Hindi)" = "https://huggingface.co/Prahaladha/hima-tts-nano-hi"
+"Hima-ASR" = "https://huggingface.co/Prahaladha/hima-asr"
+
+[tool.setuptools]
+packages = ["hima_finetune"]

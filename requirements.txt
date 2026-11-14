@@ -1,0 +1,13 @@
+torch>=2.1
+numpy
+scipy
+soundfile
+librosa
+sentencepiece
+safetensors
+pyyaml
+huggingface_hub
+speechbrain>=1.0
+# for `hima-finetune transcribe` (recordings without text):
+transformers>=5.13
+torchaudio

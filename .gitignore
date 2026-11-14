@@ -1,0 +1,15 @@
+testdata/
+te8/
+te8_aside/
+mini/
+kaggle_out/
+work/
+my-model/
+*.pyc
+__pycache__/
+report/
+hf_patch/
+build_report.py
+test_notebook.ipynb
+*.egg-info/
+build/
