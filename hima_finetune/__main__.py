@@ -1,5 +1,6 @@
 """hima-finetune <step> [options]   (or: python -m hima_finetune <step> [options])
 
+  get         gather voices from Hugging Face datasets, URLs or folders (any mix) -> one training set
   transcribe  raw recordings, no text -> clips + metadata.csv (cut at pauses, written down by Hima-ASR)
   distill     no recordings at all    -> clips + metadata.csv spoken by a big open teacher model (needs an L4/A100-class GPU)
   prepare     clips + metadata.csv    -> training data (codec latents, voice prints, a held-out set)
@@ -11,7 +12,7 @@ Run `hima-finetune <step> -h` for the options of each step.
 import importlib
 import sys
 
-STEPS = ("transcribe", "distill", "prepare", "train", "export")
+STEPS = ("get", "transcribe", "distill", "prepare", "train", "export")
 
 
 def main():

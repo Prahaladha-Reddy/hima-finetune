@@ -8,34 +8,49 @@ Telugu and Hindi, runs on a laptop CPU and on phones) on **one free T4 GPU**.
 You train a small adapter (about 5M numbers) on the frozen base model, the same way the released voices were made. The output
 is a normal model folder: `TTS("my-model").say("...", voice="Meera")`.
 
-## Start from what you have
-
-| You have | Command | GPU |
-|---|---|---|
-| Recordings + their text | straight to `prepare` | T4 |
-| Recordings only, any length or format | `hima-finetune transcribe`: cuts them into sentences at the pauses, writes them down with [Hima-ASR](https://huggingface.co/Prahaladha/hima-asr) | T4 |
-| No recordings | `hima-finetune distill`: voices read by [Maya 2 Native](https://huggingface.co/maya-research/maya2-native) (3B, Apache-2.0) | L4 / A100 class |
-
-Then:
+## Quick start
 
 ```bash
-pip install "hima-finetune @ git+https://github.com/Prahaladha-Reddy/hima-finetune"
+pip install "hima-finetune @ git+https://github.com/Prahaladha-Reddy/hima-finetune"   # add [transcribe] for recordings without text
 hf download Prahaladha/hima-tts-nano-te --local-dir hima-tts-nano-te
 
-hima-finetune prepare --base hima-tts-nano-te --data my-voices --work work    # clips -> training data
-hima-finetune train   --base hima-tts-nano-te --work work                     # the adapter; add --resume after a disconnect
-hima-finetune export  --base hima-tts-nano-te --work work --out my-model      # a complete model folder + samples
+hima-finetune get     --source hf:Prahaladha/hima-finetune-demo-voices/te --out data   # voices from anywhere -> one training set
+hima-finetune prepare --base hima-tts-nano-te --data data --work work            # clips -> training data
+hima-finetune train   --base hima-tts-nano-te --work work                        # the adapter; --resume after a disconnect
+hima-finetune export  --base hima-tts-nano-te --work work --out my-model         # a complete model folder + samples
 ```
+
+## Swap in any voices
+
+`get` takes any mix of sources, so changing voices is changing one line:
+
+| Source | `--source` |
+|---|---|
+| Ready-made expressive demo voices | `hf:Prahaladha/hima-finetune-demo-voices/te` (Telugu: Anjali, Kiran) · `hf:Prahaladha/hima-finetune-demo-voices/hi` (Hindi: Priya, Arjun) |
+| Your Hugging Face dataset | `hf:your-name/your-voices` |
+| A local folder or zip | `/data/my-voices` · `my-voices.zip` |
+| A zip on the web | `https://example.com/my-voices.zip` |
+
+Repeat `--source` to combine them, `--voices Anjali,Meera` to keep some, `--rename Anjali=Asha` to rename.
+
+Each source is either **clips + text** (`metadata.csv`: `path|text|voice`) or **recordings only** (one folder per voice, any length,
+any format), which `get` cuts at the pauses and writes down with [Hima-ASR](https://huggingface.co/Prahaladha/hima-asr). No
+recordings at all? `hima-finetune distill` has [Maya 2 Native](https://huggingface.co/maya-research/maya2-native) (3B, Apache-2.0)
+read sentences in its voices; that step needs an L4/A100-class GPU, the rest runs on a T4.
 
 The easiest path is the notebook, [`finetune_preset_voices.ipynb`](finetune_preset_voices.ipynb), which runs unchanged on Kaggle and
 Colab.
 
 ## How long, on a free T4
 
+**One voice, 40 minutes of recordings: 5.4 minutes from a blank Colab T4 to a finished voice** (install 0.1, download 0.1,
+prepare 0.6, train 4.4, package 0.2).
+
 | Voices | Prepare | Train | GPU memory |
 |---|---|---|---|
-| 2 voices x 40 min | 2 min | 9 min | 10.8 GB |
-| 6 voices x 2 h | 7 min | 90 min | 10.6 GB |
+| 1 voice x 40 min (Colab T4) | 0.6 min | 4.4 min | |
+| 2 voices x 40 min (Kaggle T4) | 2 min | 9 min | 10.8 GB |
+| 6 voices x 2 h (Kaggle T4) | 7 min | 90 min | 10.6 GB |
 
 **Does it match the released voices?** We retrained the 6 released Telugu voices from their own recordings with this repo, on one free
 Kaggle T4, and scored both against each speaker's held-out real recordings (speaker similarity, same voice settings, 8 new sentences
@@ -52,6 +67,7 @@ per voice):
 
 | Step | Input | Output |
 |---|---|---|
+| `get` | any mix of `--source`s | one `metadata.csv` with absolute paths + `voices.json` (clips and minutes per voice). Transcribes sources that have no text. |
 | `transcribe` | `recordings/<Voice>/*` (any format, any length) | 3-15 s clips cut at pauses, `metadata.csv`, `transcribe_report.json`. Drops silent clips and clips whose text does not fit the audio (real Telugu speech is 8-23 letters per second; outside 4-30 the recognizer has invented or missed words). |
 | `distill` | teacher voice names, a language, minutes per voice | clips + `metadata.csv`, read from Wikipedia sentences (or `--texts your.txt`). Keeps a clip only if the teacher stopped on its own and its length fits the text. |
 | `prepare` | `metadata.csv` (`path\|text\|voice`) + clips | codec latents, a voice print per clip, ~3% of each voice held out. Prints minutes per voice and every skipped clip with the reason. |

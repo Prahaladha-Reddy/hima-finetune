@@ -1,43 +1,14 @@
-"""Builds finetune_preset_voices.ipynb: the guide, as one notebook that runs unchanged on Kaggle and Colab (free T4).
-    python make_notebook.py                      # the public notebook
-    python make_notebook.py --test DATA PKG      # a test copy: data from DATA, the package from PKG, a short training that is
-                                                 # interrupted and resumed
-"""
+"""Builds finetune_preset_voices.ipynb: the guide as one notebook that runs unchanged on Kaggle and Colab (free T4).
+Everything a reader changes sits in the first code cell (language, voice sources, which voices, names)."""
 import json
-import sys
 
 REPO = "https://github.com/Prahaladha-Reddy/hima-finetune"
 COLAB = "https://colab.research.google.com/github/Prahaladha-Reddy/hima-finetune/blob/main/finetune_preset_voices.ipynb"
-TEST = "--test" in sys.argv
-if TEST:
-    T_DATA, T_PKG = sys.argv[sys.argv.index("--test") + 1: sys.argv.index("--test") + 3]
 
 
 def md(s): return {"cell_type": "markdown", "metadata": {}, "source": s.strip("\n").splitlines(True)}
 def code(s): return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": s.strip("\n").splitlines(True)}
 
-
-install = f'pip install -q {T_PKG}' if TEST else f'pip install -q "hima-finetune @ git+{REPO}"'
-data_line = f'INPUT = {T_DATA}' if TEST else 'INPUT = "/kaggle/input/my-voices"     # Colab: e.g. "/content/my-voices" (upload a zip and unzip it, or use Google Drive)'
-
-train_cell = code("""
-run(f"hima-finetune train --base {BASE} --work {WORK}")
-""")
-if TEST:  # train 400 steps, kill it at step 250 (after the save at 200), then resume: it must continue from 200
-    train_cell = code("""
-import subprocess as sp
-p = sp.Popen(["hima-finetune", "train", "--base", BASE, "--work", WORK, "--steps", "400", "--save_every", "200", "--valid_every", "200"],
-             stdout=sp.PIPE, stderr=sp.STDOUT, text=True, bufsize=1)
-for line in p.stdout:
-    print(line, end="")
-    if line.startswith("step 250/"):
-        p.kill(); break
-p.wait(); print("TEST: killed at step 250")
-run(f"hima-finetune train --base {BASE} --work {WORK} --steps 400 --save_every 200 --valid_every 200 --resume")
-ev = [json.loads(l) for l in open(f"{WORK}/run/progress.jsonl")]
-assert any(e["type"] == "resume" and e["step"] == 200 for e in ev), "resume did not continue from step 200"
-print("TEST_RESUME_OK")
-""")
 
 cells = [
 md(f"""
@@ -49,41 +20,63 @@ md(f"""
 gives it **new built-in voices**: a small adapter (about 5M numbers) trained on the frozen base model, the same way its released
 voices were made. Everything runs on **one free T4** (Kaggle or Colab).
 
-**Bring your voices in any of three ways:**
+**One voice, 40 minutes of recordings: 5.4 minutes on a free Colab T4, from a blank machine to a finished voice.**
 
-| You have | What happens |
+| Step | Time on a T4 (1 voice x 40 min) |
 |---|---|
-| **Recordings + their text** (`metadata.csv`) | straight to training |
-| **Recordings only** (any length, any format) | cut into sentences at the pauses and written down by [Hima-ASR](https://huggingface.co/Prahaladha/hima-asr), on this T4 |
-| **No recordings** | distill voices from [Maya 2 Native](https://huggingface.co/maya-research/maya2-native) (3B, Apache-2.0): see the last section. Generating the clips needs an L4/A100-class GPU; training then runs here |
+| Install + download the model | 0.2 min |
+| Prepare | 0.6 min |
+| Train | 4.4 min |
+| Package | 0.2 min |
 
-**How long, on a T4**
-
-| | Prepare | Train |
-|---|---|---|
-| 2 voices x 40 min | 2 min | 9 min |
-| 6 voices x 2 h | 7 min | 90 min |
-
-We retrained the 6 released Telugu voices this way on one free Kaggle T4: they match the released voices on speaker similarity
-(0.622 vs 0.609; the base model alone scores 0.572).
+Run it as it is to train two ready-made expressive demo voices, or change the first cell to train your own.
 """),
 md("""
-## 1. Setup
+## 1. Choose your voices
+The only cell you need to edit.
+
+**`SOURCES`**: where the voices come from. Any mix of:
+
+| Source | Example |
+|---|---|
+| Ready-made demo voices | `"hf:Prahaladha/hima-finetune-demo-voices/te"` (Telugu: Anjali, Kiran) · `"hf:Prahaladha/hima-finetune-demo-voices/hi"` (Hindi: Priya, Arjun) |
+| Your Hugging Face dataset | `"hf:your-name/your-voices"` |
+| A folder (Kaggle input, Drive, upload) | `"/kaggle/input/my-voices"` · `"/content/drive/MyDrive/my-voices"` |
+| A zip on the web | `"https://example.com/my-voices.zip"` |
+
+Each source is **clips + text**: a `metadata.csv` (`path|text|voice`, one line per clip) next to the clips. The demo voices come
+with their text, so nothing extra runs.
+
+- **Recordings but no text?** Put them in one folder per voice (any length, any format) and add that folder to `SOURCES`: they are
+  cut at the pauses and written down by [Hima-ASR](https://huggingface.co/Prahaladha/hima-asr). Install with
+  `hima-finetune[transcribe]` in step 2 for this.
+- **No recordings at all?** Generate a synthetic voice with [Maya 2 Native](https://huggingface.co/maya-research/maya2-native)
+  (see the last section) and add the result to `SOURCES`.
+
+**Good voices:** 30-45 minutes each, one speaker, clean audio (no music, no other voices), delivered the way you want it to sound:
+the model copies the style of its data, so lively recordings give a lively voice. Only use voices you have the right to use.
+"""),
+code("""
+LANG    = "te"                                          # "te" Telugu or "hi" Hindi
+SOURCES = ["hf:Prahaladha/hima-finetune-demo-voices/te"]       # one or more sources (see the table above)
+VOICES  = []                                            # [] = every voice found, or e.g. ["Anjali"]
+RENAME  = {}                                            # optional new names, e.g. {"Anjali": "Meera"}
+
+WORK, OUT = "work", "my-model"                          # Colab: put WORK on Google Drive to survive a disconnect
+"""),
+md("""
+## 2. Setup
 **Kaggle:** Settings → Accelerator → **GPU T4**, Internet **on**. &nbsp; **Colab:** Runtime → Change runtime type → **T4 GPU**.
 """),
 code(f"""
-LANG = "te"                     # "te" Telugu or "hi" Hindi: the language your voices speak
-
 import os, sys, json, subprocess
-!{install}
+!pip install -q "hima-finetune @ git+{REPO}"          # recordings without text? use "hima-finetune[transcribe] @ git+..." instead
 from huggingface_hub import snapshot_download
 BASE = os.path.abspath(snapshot_download(f"Prahaladha/hima-tts-nano-{{LANG}}", local_dir=f"hima-tts-nano-{{LANG}}"))
 sys.path.insert(0, BASE)
 
 def run(cmd):
-    \"\"\"Run a step, stream its output, and stop the notebook if it fails (a plain `!command` would carry on silently).\"\"\"
-    if not globals().get("READY", True):
-        print("skipped: add your voices in step 2 first"); return
+    \"\"\"Run a step, stream its output, and stop here if it fails (a plain `!command` would carry on silently).\"\"\"
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     for line in p.stdout:
         print(line, end="")
@@ -93,97 +86,60 @@ def run(cmd):
 !nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 """),
 md("""
-## 2. Your voices
-Point `INPUT` at a folder in **one** of these two layouts:
-
-**A. Recordings + text.** A `metadata.csv` with one line per clip: `file | exact words spoken | voice name`
-```
-path|text|voice
-clips/meera_001.wav|నమస్కారం, ఈ రోజు ఎలా ఉన్నారు?|Meera
-clips/ravi_001.wav|ఆ సినిమా చాలా బాగుంది.|Ravi
-```
-**B. Recordings only.** One folder per voice; the folder name becomes the voice name. Any length, any format.
-```
-my-voices/Meera/interview.mp3
-my-voices/Ravi/podcast_part1.wav
-```
-
-**What makes a good voice**
-- **30-45 minutes per voice.** Under 20 minutes works, but the voice comes out weaker.
-- One speaker per voice, clean audio: no music, no other voices, little echo.
-- Layout A: clips of 2-20 s, and the text must match the audio word for word (English words in English letters are fine).
-- Only use voices you have the right to use, with the speaker's consent.
-
-**Kaggle:** Add Input → Upload → your folder. **Colab:** upload a zip and `!unzip` it, or mount Google Drive.
-"""),
-code(f"""
-{data_line}
-WORK = "work"          # Colab: put this on Google Drive (e.g. "/content/drive/MyDrive/hima-work") to survive a disconnect
-OUT = "my-model"
-
-AUDIO = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".aac", ".webm", ".mp4")
-HAS_TEXT = os.path.exists(f"{{INPUT}}/metadata.csv")
-HAS_AUDIO = os.path.isdir(INPUT) and any(f.lower().endswith(AUDIO) for _, _, fs in os.walk(INPUT) for f in fs)
-READY = HAS_TEXT or HAS_AUDIO
-DATA = INPUT if HAS_TEXT else f"{{WORK}}/transcribed"
-if HAS_TEXT:
-    print("layout A: recordings + text"); run(f"head -4 '{{INPUT}}/metadata.csv'")
-elif HAS_AUDIO:
-    print("layout B: recordings only. Voices:", sorted(d for d in os.listdir(INPUT) if os.path.isdir(f"{{INPUT}}/{{d}}")))
-else:
-    print(f"No voices found in {{INPUT}}. Add your folder (step 2), set INPUT, and run again.")
-"""),
-md("""
-## 3. Transcribe (recordings only)
-Skipped if you have a `metadata.csv`. Cuts every recording into 3-15 s clips at the pauses, writes down each clip with
-**Hima-ASR** (a 0.46B speech recognizer for 11 Indian languages and English), and drops clips that are silent, too short, or
-whose text does not fit the audio. Read a few lines afterwards: training learns whatever the text says.
+## 3. Gather the voices
+Downloads every source, transcribes any recordings that have no text, keeps the voices you chose, and prints the minutes per voice.
 """),
 code("""
-if READY and not HAS_TEXT:
-    !pip install -q "transformers>=5.13"
-    run(f"hima-finetune transcribe --audio '{INPUT}' --out '{DATA}' --lang {LANG}")
-    print("\\n".join(open(f"{DATA}/metadata.csv", encoding="utf-8").read().splitlines()[:6]))
+DATA = f"{WORK}/data"
+args = " ".join(f"--source '{s}'" for s in SOURCES)
+args += f" --voices {','.join(VOICES)}" if VOICES else ""
+args += f" --rename {','.join(f'{k}={v}' for k, v in RENAME.items())}" if RENAME else ""
+run(f"hima-finetune get {args} --lang {LANG} --out {DATA}")
 """),
 md("""
 ## 4. Prepare
-Encodes every clip with the model's own codec, takes a voice print of each clip, and holds out about 3% of every voice to
-check training on clips it never saw. It prints the minutes per voice and anything it skipped, with the reason.
+Encodes every clip with the model's own codec, takes a voice print of each clip, and holds out about 3% of every voice to check
+training on clips it never saw.
 """),
 code("""
-run(f"hima-finetune prepare --base {BASE} --data '{DATA}' --work {WORK}")
+run(f"hima-finetune prepare --base {BASE} --data {DATA} --work {WORK}")
 """),
 md("""
 ## 5. Train
-The number of steps is set from your data: about 60 passes over it, what the released voices got. The adapter is saved every
-500 steps. **Disconnected?** Run this cell again with `--resume` added: it continues from the last save (keep `WORK` on Google
-Drive in Colab). Out of memory? Add `--batch_frames 3000`.
+Steps are set from your data (about 60 passes over it). The adapter is saved every 500 steps with the full training state.
+**Disconnected?** Run this cell again with `--resume` added. **Out of memory?** Add `--batch_frames 3000`.
 """),
-train_cell,
 code("""
-# held-out loss: it should fall from step 0 (the base model on your voices) and level off
-if READY:
-    import matplotlib.pyplot as plt
-    v = [json.loads(l) for l in open(f"{WORK}/run/progress.jsonl") if '"valid"' in l]
-    plt.figure(figsize=(7, 3)); plt.plot([r["step"] for r in v], [r["loss"] for r in v], "o-", color="#16a34a")
-    plt.xlabel("step"); plt.ylabel("held-out loss"); plt.grid(alpha=.3); plt.show()
+run(f"hima-finetune train --base {BASE} --work {WORK}")
+
+import matplotlib.pyplot as plt                       # held-out loss: falls from step 0 (the base model) and levels off
+v = [json.loads(l) for l in open(f"{WORK}/run/progress.jsonl") if '"valid"' in l]
+plt.figure(figsize=(7, 2.6)); plt.plot([r["step"] for r in v], [r["loss"] for r in v], "o-", color="#16a34a")
+plt.xlabel("step"); plt.ylabel("held-out loss"); plt.grid(alpha=.3); plt.show()
 """),
 md("""
-## 6. Package and listen
-Builds `my-model`: the base model with your voices in `voices/`, exactly like the released ones. Optional: `--genders Meera=female,Ravi=male`.
+## 6. Listen: the real voice, then yours
+For every voice: a real recording that training never saw, then the trained voice on new sentences, including some with feeling.
 """),
 code("""
 run(f"hima-finetune export --base {BASE} --work {WORK} --out {OUT}")
-if READY:
-    from IPython.display import Audio, display
-    from hima_tts import TTS
-    tts = TTS(OUT)
-    lines = {"te": ["ఈ రోజు సాయంత్రం మనం కలిసి సినిమాకి వెళ్దామా?", "మీ ఆర్డర్ ఇంకా పది నిమిషాల్లో వస్తుంది."],
-             "hi": ["आज शाम हम साथ में फ़िल्म देखने चलें?", "आपका ऑर्डर दस मिनट में पहुँच जाएगा।"]}[LANG]
-    for name in tts.voices:
-        print(name)
-        for i, line in enumerate(lines):
-            display(Audio(tts.say(line, voice=name, seed=i), rate=24000))
+import soundfile as sf
+from IPython.display import Audio, Markdown, display
+from hima_tts import TTS
+tts = TTS(OUT)
+LINES = {"te": ["ఈ రోజు సాయంత్రం మనం కలిసి సినిమాకి వెళ్దామా?", "అరె! నువ్వు నిజంగా గెలిచావా? ఇది అద్భుతం!",
+                "ఎన్నిసార్లు చెప్పాలి నీకు? ఇదే చివరిసారి!", "ఆయన ఇక రారని తెలిసి నా మనసు విరిగిపోయింది."],
+         "hi": ["आज शाम हम साथ में फ़िल्म देखने चलें?", "अरे वाह! तुमने सच में कर दिखाया!",
+                "कितनी बार कहूँ तुमसे? ये आख़िरी बार है!", "मुझे यकीन नहीं हो रहा कि वो अब कभी नहीं आएगा।"]}[LANG]
+held = [json.loads(l) for l in open(f"{WORK}/enc/index.jsonl", encoding="utf-8")]
+for name in tts.voices:
+    display(Markdown(f"### {name}"))
+    real = next((r for r in held if r["voice"] == name and r["split"] == "holdout"), None)
+    if real:
+        x, sr = sf.read(real["path"] if os.path.isabs(real["path"]) else os.path.join(DATA, real["path"]))
+        display(Markdown(f"**Real recording** (never seen in training): *{real['text_raw']}*")); display(Audio(x, rate=sr))
+    for i, line in enumerate(LINES):
+        display(Markdown(f"**Trained voice:** *{line}*")); display(Audio(tts.say(line, voice=name, seed=i), rate=24000))
 """),
 md("""
 ## 7. Use and share
@@ -191,9 +147,9 @@ md("""
 ```python
 from hima_tts import TTS
 tts = TTS("my-model")
-tts.save(tts.say("మీ వాక్యం ఇక్కడ", voice="Meera"), "out.wav")
+tts.save(tts.say("మీ వాక్యం ఇక్కడ", voice="Anjali"), "out.wav")
 ```
-Your voices are two small files: `my-model/voices/adapter.safetensors` and `voices.safetensors`. Download them, or push the folder
+Your voices are two small files, `my-model/voices/adapter.safetensors` and `voices.safetensors`. Download them, or push the folder
 to the Hugging Face Hub:
 """),
 code("""
@@ -204,7 +160,7 @@ code("""
 md("""
 ## No recordings? Distill from Maya 2 Native
 [Maya 2 Native](https://huggingface.co/maya-research/maya2-native) is an open 3B text-to-speech model (Apache-2.0) with 20
-built-in voices in 12 languages. Have it read a few thousand sentences in the voices you like, and train Hima on them: the same
+built-in voices in 12 languages. Have it read a few thousand sentences in the voices you like and train Hima on them: the same
 voices from a model ~50x smaller.
 
 The teacher needs an **Ampere-or-newer GPU** (L4, A10G, A100, H100; 12 GB+) and its own environment, so this part does not run
@@ -214,14 +170,15 @@ pip install "maya3 @ git+https://github.com/MayaResearch/maya2-native" --extra-i
 pip install --no-deps "hima-finetune @ git+https://github.com/Prahaladha-Reddy/hima-finetune" pyarrow
 hima-finetune distill --voices Vaidehi,Sreekar --lang te --minutes 45 --out distilled
 ```
-It reads sentences from that language's Wikipedia (or your own: `--texts sentences.txt`), gives each voice different sentences,
-and keeps a clip only if the teacher finished it cleanly. Then bring `distilled/` here as layout A and run steps 4-7.
-Licences: the teacher's weights are Apache-2.0, its codec (Kyutai Mimi) is CC-BY-4.0, Wikipedia text is CC BY-SA 4.0.
+Then add the `distilled` folder to `SOURCES` above. Licences: the teacher's weights are Apache-2.0, its codec (Kyutai Mimi) is
+CC-BY-4.0, and the default sentences come from Wikipedia (CC BY-SA 4.0).
+
+**Demo voices:** a subset of [Rasa](https://huggingface.co/datasets/ai4bharat/Rasa) by AI4Bharat (CC-BY-4.0), conversational and
+emotional speech only.
 """),
 ]
 nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                                    "language_info": {"name": "python"}, "accelerator": "GPU", "colab": {"provenance": [], "gpuType": "T4"}},
       "nbformat": 4, "nbformat_minor": 5}
-out = "test_notebook.ipynb" if TEST else "finetune_preset_voices.ipynb"
-json.dump(nb, open(out, "w"), ensure_ascii=False, indent=1)
-print("ok", out, len(cells), "cells")
+json.dump(nb, open("finetune_preset_voices.ipynb", "w"), ensure_ascii=False, indent=1)
+print("ok finetune_preset_voices.ipynb", len(cells), "cells")
